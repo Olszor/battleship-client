@@ -26,7 +26,9 @@ func NewClient(url string, timeout time.Duration) *Client {
 }
 
 func (c *Client) InitGame() error {
-	body := InitGameRequest{}
+	body := InitGameRequest{
+		Wpbot: true,
+	}
 	bodyJson, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("error serializing InitGameRequestBody to json: %s", err)
