@@ -5,20 +5,25 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	gui "github.com/grupawp/warships-gui/v2"
 )
 
 type App struct {
-	player         string
-	opponent       string
-	ui             *gui.GUI
-	playerShips    []string
-	playerBoard    *gui.Board
-	opponentBoard  *gui.Board
-	playerStates   [10][10]gui.State
-	opponentStates [10][10]gui.State
+	client              *http.Client
+	player              string
+	playerDescription   string
+	opponent            string
+	opponentDescription string
+	ui                  *gui.GUI
+	playerShips         []string
+	playerBoard         *gui.Board
+	opponentBoard       *gui.Board
+	playerStates        [10][10]gui.State
+	opponentStates      [10][10]gui.State
+	opponentShots       []string
 }
 
 func NewGame(client *http.Client) App {
@@ -31,7 +36,7 @@ func NewGame(client *http.Client) App {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for status.GameStatus != "game_in_progress" {
+	for status.GameStatus != "game_in_progress" || !status.ShouldFire {
 		time.Sleep(time.Second)
 		status, err = client.Status()
 		if err != nil {
@@ -44,10 +49,19 @@ func NewGame(client *http.Client) App {
 		log.Fatal(err)
 	}
 
+	desc, err := client.Description()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	a := App{
-		player:      status.Nick,
-		opponent:    status.Opponent,
-		playerShips: board,
+		client:              client,
+		player:              status.Nick,
+		playerDescription:   desc.Desc,
+		opponent:            status.Opponent,
+		opponentDescription: desc.OppDesc,
+		playerShips:         board,
+		opponentShots:       status.OppShots,
 	}
 
 	a.render()
@@ -58,7 +72,7 @@ func NewGame(client *http.Client) App {
 func (a *App) render() {
 	a.ui = gui.NewGUI(true)
 
-	a.playerBoard = gui.NewBoard(1, 10, nil)
+	a.playerBoard = gui.NewBoard(1, 6, nil)
 	a.ui.Draw(a.playerBoard)
 
 	a.playerStates = [10][10]gui.State{}
@@ -71,9 +85,18 @@ func (a *App) render() {
 		a.playerStates[x][y] = gui.Ship
 	}
 
+	for _, coordinate := range a.opponentShots {
+		x, y := convertCoordinate(coordinate)
+		if a.playerStates[x][y] == gui.Ship {
+			a.playerStates[x][y] = gui.Hit
+		} else {
+			a.playerStates[x][y] = gui.Miss
+		}
+	}
+
 	a.playerBoard.SetStates(a.playerStates)
 
-	a.opponentBoard = gui.NewBoard(46, 10, nil)
+	a.opponentBoard = gui.NewBoard(46, 6, nil)
 	a.ui.Draw(a.opponentBoard)
 
 	a.opponentStates = [10][10]gui.State{}
@@ -85,13 +108,81 @@ func (a *App) render() {
 	a.ui.Draw(exitTxt)
 	vsTxt := gui.NewText(1, 3, fmt.Sprintf("%s vs %s", a.player, a.opponent), nil)
 	a.ui.Draw(vsTxt)
+	for i, line := range wrapText(a.playerDescription) {
+		descTxt := gui.NewText(1, 28+i, line, nil)
+		a.ui.Draw(descTxt)
+	}
+	for i, line := range wrapText(a.opponentDescription) {
+		oppDescTxt := gui.NewText(46, 28+i, line, nil)
+		a.ui.Draw(oppDescTxt)
+	}
+	yourTurnTxt := gui.NewText(46, 3, "Your turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Green})
+	a.ui.Draw(yourTurnTxt)
+	opponentTurnTxt := gui.NewText(46, 3, "Opponent turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Red})
 
 	go func() {
 		for {
-			coordinate := a.opponentBoard.Listen(context.TODO())
-			x, y := convertCoordinate(coordinate)
-			a.opponentStates[x][y] = gui.Miss
-			a.opponentBoard.SetStates(a.opponentStates)
+			var result string
+			for result != "miss" {
+				coordinate := a.opponentBoard.Listen(context.TODO())
+				x, y := convertCoordinate(coordinate)
+				if a.opponentStates[x][y] == gui.Hit || a.opponentStates[x][y] == gui.Miss {
+					continue
+				}
+				fireResponse, err := a.client.Fire(coordinate)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if fireResponse.Result == "miss" {
+					a.opponentStates[x][y] = gui.Miss
+				} else {
+					a.opponentStates[x][y] = gui.Hit
+				}
+				a.opponentBoard.SetStates(a.opponentStates)
+				result = fireResponse.Result
+			}
+
+			a.ui.Remove(yourTurnTxt)
+			a.ui.Draw(opponentTurnTxt)
+
+			status, err := a.client.Status()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for !status.ShouldFire {
+				if status.GameStatus == "ended" {
+					var resultTxt gui.Drawable
+					if status.LastGameStatus == "win" {
+						resultTxt = gui.NewText(46, 3, "You won!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Green})
+					} else {
+						resultTxt = gui.NewText(46, 3, "You lost!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Red})
+					}
+					a.ui.Remove(opponentTurnTxt)
+					a.ui.Draw(resultTxt)
+					select {}
+				}
+				time.Sleep(time.Second)
+				status, err = a.client.Status()
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			a.ui.Remove(opponentTurnTxt)
+			a.ui.Draw(yourTurnTxt)
+
+			a.ui.Log(strings.Join(status.OppShots, ","))
+
+			for _, coord := range status.OppShots {
+				x, y := convertCoordinate(coord)
+				if a.playerStates[x][y] == gui.Ship || a.opponentStates[x][y] == gui.Hit {
+					a.playerStates[x][y] = gui.Hit
+				} else {
+					a.playerStates[x][y] = gui.Miss
+				}
+			}
+			a.playerBoard.SetStates(a.playerStates)
 		}
 	}()
 
@@ -108,4 +199,22 @@ func convertCoordinate(coordinate string) (int, int) {
 	}
 
 	return int(coordinate[0]) - 65, 9
+}
+
+func wrapText(text string) []string {
+	words := strings.Split(text, " ")
+	var lines []string
+
+	line := words[0]
+	for _, word := range words[1:] {
+		if len(line)+len(word)+1 > 44 {
+			lines = append(lines, line)
+			line = word
+			continue
+		}
+		line += " " + word
+	}
+	lines = append(lines, line)
+
+	return lines
 }

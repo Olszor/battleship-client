@@ -134,3 +134,83 @@ func (c *Client) Status() (*StatusResponse, error) {
 
 	return &body, nil
 }
+
+func (c *Client) Description() (*DescriptionResponse, error) {
+	requestUrl, err := url.JoinPath(c.url, "/game/desc")
+	if err != nil {
+		return nil, fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, requestUrl, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("X-Auth-Token", c.token)
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %s", err)
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	bodyJson, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading body: %s", err)
+	}
+
+	var body DescriptionResponse
+	err = json.Unmarshal(bodyJson, &body)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing body: %s", err)
+	}
+
+	return &body, nil
+}
+
+func (c *Client) Fire(coord string) (*FireResponse, error) {
+	reqBody := FireRequest{
+		Coord: coord,
+	}
+	bodyJson, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("error serializing FireRequest to json: %s", err)
+	}
+
+	requestUrl, err := url.JoinPath(c.url, "/game/fire")
+	if err != nil {
+		return nil, fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, requestUrl, bytes.NewReader(bodyJson))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("X-Auth-Token", c.token)
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %s", err)
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	bodyJson, err = io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading body: %s", err)
+	}
+
+	var resBody FireResponse
+	err = json.Unmarshal(bodyJson, &resBody)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing body: %s", err)
+	}
+
+	return &resBody, nil
+}
