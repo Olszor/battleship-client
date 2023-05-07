@@ -151,6 +151,8 @@ func (a *App) render() {
 			}
 
 			for !status.ShouldFire {
+				a.ui.Log(strings.Join(status.OppShots, ","))
+				a.playerBoard.SetStates(drawShots(a.playerStates, status.OppShots))
 				if status.GameStatus == "ended" {
 					var resultTxt gui.Drawable
 					if status.LastGameStatus == "win" {
@@ -171,18 +173,6 @@ func (a *App) render() {
 
 			a.ui.Remove(opponentTurnTxt)
 			a.ui.Draw(yourTurnTxt)
-
-			a.ui.Log(strings.Join(status.OppShots, ","))
-
-			for _, coord := range status.OppShots {
-				x, y := convertCoordinate(coord)
-				if a.playerStates[x][y] == gui.Ship || a.opponentStates[x][y] == gui.Hit {
-					a.playerStates[x][y] = gui.Hit
-				} else {
-					a.playerStates[x][y] = gui.Miss
-				}
-			}
-			a.playerBoard.SetStates(a.playerStates)
 		}
 	}()
 
@@ -217,4 +207,17 @@ func wrapText(text string) []string {
 	lines = append(lines, line)
 
 	return lines
+}
+
+func drawShots(states [10][10]gui.State, shots []string) [10][10]gui.State {
+	for _, coord := range shots {
+		x, y := convertCoordinate(coord)
+		if states[x][y] == gui.Ship {
+			states[x][y] = gui.Hit
+		} else {
+			states[x][y] = gui.Miss
+		}
+	}
+
+	return states
 }
