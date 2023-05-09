@@ -24,10 +24,16 @@ type App struct {
 	playerStates        [10][10]gui.State
 	opponentStates      [10][10]gui.State
 	opponentShots       []string
+	shouldFire          bool
+	yourTurnTxt         *gui.Text
+	opponentTurnTxt     *gui.Text
+	accuracyTxt         *gui.Text
+	shotsFired          int
+	shotsHit            int
 }
 
 func NewGame(client *http.Client) App {
-	err := client.InitGame()
+	err := client.InitGame("Potężny gracz", "kapitan", "", true)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,7 +42,7 @@ func NewGame(client *http.Client) App {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for status.GameStatus != "game_in_progress" || !status.ShouldFire {
+	for status.GameStatus != "game_in_progress" {
 		time.Sleep(time.Second)
 		status, err = client.Status()
 		if err != nil {
@@ -62,14 +68,15 @@ func NewGame(client *http.Client) App {
 		opponentDescription: desc.OppDesc,
 		playerShips:         board,
 		opponentShots:       status.OppShots,
+		shouldFire:          status.ShouldFire,
 	}
 
-	a.render()
+	a.run()
 
 	return a
 }
 
-func (a *App) render() {
+func (a *App) run() {
 	a.ui = gui.NewGUI(true)
 
 	a.playerBoard = gui.NewBoard(1, 6, nil)
@@ -83,15 +90,6 @@ func (a *App) render() {
 	for _, coordinate := range a.playerShips {
 		x, y := convertCoordinate(coordinate)
 		a.playerStates[x][y] = gui.Ship
-	}
-
-	for _, coordinate := range a.opponentShots {
-		x, y := convertCoordinate(coordinate)
-		if a.playerStates[x][y] == gui.Ship {
-			a.playerStates[x][y] = gui.Hit
-		} else {
-			a.playerStates[x][y] = gui.Miss
-		}
 	}
 
 	a.playerBoard.SetStates(a.playerStates)
@@ -116,67 +114,104 @@ func (a *App) render() {
 		oppDescTxt := gui.NewText(46, 28+i, line, nil)
 		a.ui.Draw(oppDescTxt)
 	}
-	yourTurnTxt := gui.NewText(46, 3, "Your turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Green})
-	a.ui.Draw(yourTurnTxt)
-	opponentTurnTxt := gui.NewText(46, 3, "Opponent turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Red})
+	a.yourTurnTxt = gui.NewText(46, 3, "Your turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Green})
+	a.opponentTurnTxt = gui.NewText(46, 3, "Opponent turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Red})
+	a.displayTurnInfo()
+	a.accuracyTxt = gui.NewText(46, 1, fmt.Sprintf("Accuracy: %d/%d", a.shotsHit, a.shotsFired), nil)
+	a.ui.Draw(a.accuracyTxt)
 
 	go func() {
 		for {
-			var result string
-			for result != "miss" {
-				coordinate := a.opponentBoard.Listen(context.TODO())
-				x, y := convertCoordinate(coordinate)
-				if a.opponentStates[x][y] == gui.Hit || a.opponentStates[x][y] == gui.Miss {
-					continue
-				}
-				fireResponse, err := a.client.Fire(coordinate)
-				if err != nil {
-					log.Fatal(err)
-				}
-				if fireResponse.Result == "miss" {
-					a.opponentStates[x][y] = gui.Miss
-				} else {
-					a.opponentStates[x][y] = gui.Hit
-				}
-				a.opponentBoard.SetStates(a.opponentStates)
-				result = fireResponse.Result
-			}
-
-			a.ui.Remove(yourTurnTxt)
-			a.ui.Draw(opponentTurnTxt)
-
-			status, err := a.client.Status()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			for !status.ShouldFire {
-				a.ui.Log(strings.Join(status.OppShots, ","))
-				a.playerBoard.SetStates(drawShots(a.playerStates, status.OppShots))
-				if status.GameStatus == "ended" {
-					var resultTxt gui.Drawable
-					if status.LastGameStatus == "win" {
-						resultTxt = gui.NewText(46, 3, "You won!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Green})
-					} else {
-						resultTxt = gui.NewText(46, 3, "You lost!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Red})
-					}
-					a.ui.Remove(opponentTurnTxt)
-					a.ui.Draw(resultTxt)
-					select {}
-				}
-				time.Sleep(time.Second)
-				status, err = a.client.Status()
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
-
-			a.ui.Remove(opponentTurnTxt)
-			a.ui.Draw(yourTurnTxt)
+			a.waitForYourTurn()
+			a.displayTurnInfo()
+			a.handleFire()
+			a.displayTurnInfo()
 		}
 	}()
 
 	a.ui.Start(nil)
+}
+
+func (a *App) drawOppShots() {
+	for _, coord := range a.opponentShots {
+		x, y := convertCoordinate(coord)
+		if a.playerStates[x][y] == gui.Hit || a.playerStates[x][y] == gui.Miss {
+			continue
+		}
+		if a.playerStates[x][y] == gui.Ship {
+			a.playerStates[x][y] = gui.Hit
+		} else {
+			a.playerStates[x][y] = gui.Miss
+		}
+	}
+	a.playerBoard.SetStates(a.playerStates)
+}
+
+func (a *App) displayTurnInfo() {
+	a.ui.Remove(a.yourTurnTxt)
+	a.ui.Remove(a.opponentTurnTxt)
+	if a.shouldFire {
+		a.ui.Draw(a.yourTurnTxt)
+	} else {
+		a.ui.Draw(a.opponentTurnTxt)
+	}
+}
+
+func (a *App) waitForYourTurn() {
+	for !a.shouldFire {
+		time.Sleep(time.Second)
+		status, err := a.client.Status()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		a.shouldFire = status.ShouldFire
+		a.opponentShots = status.OppShots
+		a.drawOppShots()
+
+		if status.GameStatus == "ended" {
+			a.handleGameEnded(status.LastGameStatus)
+		}
+	}
+}
+
+func (a *App) handleFire() {
+	var result string
+	for result != "miss" {
+		coordinate := a.opponentBoard.Listen(context.TODO())
+		x, y := convertCoordinate(coordinate)
+		if a.opponentStates[x][y] == gui.Hit || a.opponentStates[x][y] == gui.Miss {
+			continue
+		}
+		fireResponse, err := a.client.Fire(coordinate)
+		if err != nil {
+			log.Fatal(err)
+		}
+		a.shotsFired++
+		if fireResponse.Result == "miss" {
+			a.opponentStates[x][y] = gui.Miss
+		} else {
+			a.opponentStates[x][y] = gui.Hit
+			a.shotsHit++
+		}
+		a.opponentBoard.SetStates(a.opponentStates)
+		a.accuracyTxt.SetText(fmt.Sprintf("Accuracy: %d/%d", a.shotsHit, a.shotsFired))
+		result = fireResponse.Result
+	}
+
+	a.shouldFire = false
+}
+
+func (a *App) handleGameEnded(result string) {
+	var resultTxt gui.Drawable
+	if result == "win" {
+		resultTxt = gui.NewText(46, 3, "You won!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Green})
+	} else {
+		resultTxt = gui.NewText(46, 3, "You lost!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Red})
+	}
+	a.ui.Remove(a.opponentTurnTxt)
+	a.ui.Draw(resultTxt)
+	select {}
 }
 
 func convertCoordinate(coordinate string) (int, int) {
@@ -207,17 +242,4 @@ func wrapText(text string) []string {
 	lines = append(lines, line)
 
 	return lines
-}
-
-func drawShots(states [10][10]gui.State, shots []string) [10][10]gui.State {
-	for _, coord := range shots {
-		x, y := convertCoordinate(coord)
-		if states[x][y] == gui.Ship {
-			states[x][y] = gui.Hit
-		} else {
-			states[x][y] = gui.Miss
-		}
-	}
-
-	return states
 }

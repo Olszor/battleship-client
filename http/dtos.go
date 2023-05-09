@@ -1,7 +1,10 @@
 package http
 
 type InitGameRequest struct {
-	Wpbot bool `json:"wpbot"`
+	Desc       string `json:"desc"`
+	Nick       string `json:"nick"`
+	TargetNick string `json:"target_nick"`
+	Wpbot      bool   `json:"wpbot"`
 }
 
 type BoardResponse struct {

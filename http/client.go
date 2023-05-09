@@ -25,9 +25,12 @@ func NewClient(url string, timeout time.Duration) *Client {
 	}
 }
 
-func (c *Client) InitGame() error {
+func (c *Client) InitGame(description string, nick string, targetNick string, wpbot bool) error {
 	body := InitGameRequest{
-		Wpbot: true,
+		Desc:       description,
+		Nick:       nick,
+		TargetNick: targetNick,
+		Wpbot:      wpbot,
 	}
 	bodyJson, err := json.Marshal(body)
 	if err != nil {
