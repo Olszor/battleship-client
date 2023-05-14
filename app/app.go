@@ -32,8 +32,8 @@ type App struct {
 	shotsHit            int
 }
 
-func NewGame(client *http.Client) App {
-	err := client.InitGame("Potężny gracz", "kapitan", "", true)
+func NewGame(client *http.Client, description string, nick string, targetNick string, wpbot bool) App {
+	err := client.InitGame(description, nick, targetNick, wpbot)
 	if err != nil {
 		log.Fatal(err)
 	}
