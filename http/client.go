@@ -217,3 +217,63 @@ func (c *Client) Fire(coord string) (*FireResponse, error) {
 
 	return &resBody, nil
 }
+
+func (c *Client) List() (*[]ListResponse, error) {
+	requestUrl, err := url.JoinPath(c.url, "/game/list")
+	if err != nil {
+		return nil, fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, requestUrl, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("X-Auth-Token", c.token)
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %s", err)
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	bodyJson, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading body: %s", err)
+	}
+
+	var resBody []ListResponse
+	err = json.Unmarshal(bodyJson, &resBody)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing body: %s", err)
+	}
+
+	return &resBody, nil
+}
+
+func (c *Client) Refresh() error {
+	requestUrl, err := url.JoinPath(c.url, "/game/refresh")
+	if err != nil {
+		return fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, requestUrl, http.NoBody)
+	if err != nil {
+		return fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("X-Auth-Token", c.token)
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error sending request: %s", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	return nil
+}

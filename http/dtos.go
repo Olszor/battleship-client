@@ -35,3 +35,8 @@ type FireRequest struct {
 type FireResponse struct {
 	Result string `json:"result"`
 }
+
+type ListResponse struct {
+	GameStatus string `json:"game_status"`
+	Nick       string `json:"nick"`
+}

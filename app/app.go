@@ -27,9 +27,16 @@ type App struct {
 	shouldFire          bool
 	yourTurnTxt         *gui.Text
 	opponentTurnTxt     *gui.Text
+	timerTxt            *gui.Text
 	accuracyTxt         *gui.Text
 	shotsFired          int
 	shotsHit            int
+}
+
+func NewApp(client *http.Client) App {
+	return App{
+		client: client,
+	}
 }
 
 func NewGame(client *http.Client, description string, nick string, targetNick string, wpbot bool) App {
@@ -42,12 +49,21 @@ func NewGame(client *http.Client, description string, nick string, targetNick st
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	counter := 0
 	for status.GameStatus != "game_in_progress" {
+		if (counter+1)%10 == 0 {
+			err := client.Refresh()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 		time.Sleep(time.Second)
 		status, err = client.Status()
 		if err != nil {
 			log.Fatal(err)
 		}
+		counter++
 	}
 
 	board, err := client.Board()
@@ -117,6 +133,8 @@ func (a *App) run() {
 	a.yourTurnTxt = gui.NewText(46, 3, "Your turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Green})
 	a.opponentTurnTxt = gui.NewText(46, 3, "Opponent turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Red})
 	a.displayTurnInfo()
+	a.timerTxt = gui.NewText(1, 2, "", nil)
+	a.ui.Draw(a.timerTxt)
 	a.accuracyTxt = gui.NewText(46, 1, fmt.Sprintf("Accuracy: %d/%d", a.shotsHit, a.shotsFired), nil)
 	a.ui.Draw(a.accuracyTxt)
 
@@ -196,6 +214,18 @@ func (a *App) handleFire() {
 		}
 		a.opponentBoard.SetStates(a.opponentStates)
 		a.accuracyTxt.SetText(fmt.Sprintf("Accuracy: %d/%d", a.shotsHit, a.shotsFired))
+
+		if fireResponse.Result == "sunk" {
+			status, err := a.client.Status()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			if status.GameStatus == "ended" {
+				a.handleGameEnded(status.LastGameStatus)
+			}
+		}
+
 		result = fireResponse.Result
 	}
 
@@ -210,6 +240,7 @@ func (a *App) handleGameEnded(result string) {
 		resultTxt = gui.NewText(46, 3, "You lost!", &gui.TextConfig{FgColor: gui.Black, BgColor: gui.Red})
 	}
 	a.ui.Remove(a.opponentTurnTxt)
+	a.ui.Remove(a.yourTurnTxt)
 	a.ui.Draw(resultTxt)
 	select {}
 }
