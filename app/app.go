@@ -2,9 +2,11 @@ package app
 
 import (
 	"battleship-client/http"
+	"bufio"
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,19 +35,91 @@ type App struct {
 	shotsHit            int
 }
 
-func NewApp(client *http.Client) App {
-	return App{
+func NewApp(client *http.Client, reader *bufio.Reader, trimFunc func(rune) bool, description string, nick string) App {
+	//fmt.Print("Do you want to play against wpbot (y/n): ")
+	//wpbotInput, err := reader.ReadString('\n')
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//wpbot := strings.TrimRightFunc(wpbotInput, trimFunc) == "y"
+	//targetNick := ""
+	//
+	//if !wpbot {
+	//	playersList, err := client.List()
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	//	fmt.Println("List of players waiting for game:")
+	//	for _, player := range *playersList {
+	//		if player.GameStatus == "waiting" {
+	//			fmt.Println(player.Nick)
+	//		}
+	//	}
+	//	fmt.Print("Enter nick of player you want to play against or leave empty if you want to start waiting: ")
+	//	targetNick, err = reader.ReadString('\n')
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	//	targetNick = strings.TrimRightFunc(targetNick, trimFunc)
+	//}
+
+	a := App{
 		client: client,
+		player: nick,
+	}
+
+	targetNick, wpbot := a.displayMenu(reader, trimFunc)
+
+	a.newGame(description, nick, targetNick, wpbot)
+
+	return a
+}
+
+func (a *App) displayMenu(reader *bufio.Reader, trimFunc func(rune) bool) (string, bool) {
+	options := []string{
+		"Play against wpbot",
+		"Play against one of currently waiting players",
+		"Join waiting list",
+		"Display top 10 players stats",
+		"Display your stats",
+		"Setup your board",
+	}
+
+	for {
+
+		switch getChoice(reader, trimFunc, options) {
+		case 1:
+			return "", true
+		case 2:
+			playersList, err := a.client.List()
+			if err != nil {
+				log.Fatal(err)
+			}
+			filteredList := Filter(*playersList, func(element http.ListResponse) bool {
+				return element.GameStatus == "waiting"
+			})
+			mappedList := Map(filteredList, func(element http.ListResponse) string {
+				return element.Nick
+			})
+			chosenPlayerId := getChoice(reader, trimFunc, mappedList)
+			return mappedList[chosenPlayerId-1], false
+		case 3:
+			return "", false
+		case 4:
+			a.displayStats()
+		case 5:
+			a.displayPlayerStats()
+		}
 	}
 }
 
-func NewGame(client *http.Client, description string, nick string, targetNick string, wpbot bool) App {
-	err := client.InitGame(description, nick, targetNick, wpbot)
+func (a *App) newGame(description string, nick string, targetNick string, wpbot bool) {
+	err := a.client.InitGame(description, nick, targetNick, wpbot)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	status, err := client.Status()
+	status, err := a.client.Status()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,43 +127,39 @@ func NewGame(client *http.Client, description string, nick string, targetNick st
 	counter := 0
 	for status.GameStatus != "game_in_progress" {
 		if (counter+1)%10 == 0 {
-			err := client.Refresh()
+			fmt.Println("waiting...")
+			err := a.client.Refresh()
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
 		time.Sleep(time.Second)
-		status, err = client.Status()
+		status, err = a.client.Status()
 		if err != nil {
 			log.Fatal(err)
 		}
 		counter++
 	}
 
-	board, err := client.Board()
+	board, err := a.client.Board()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	desc, err := client.Description()
+	desc, err := a.client.Description()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	a := App{
-		client:              client,
-		player:              status.Nick,
-		playerDescription:   desc.Desc,
-		opponent:            status.Opponent,
-		opponentDescription: desc.OppDesc,
-		playerShips:         board,
-		opponentShots:       status.OppShots,
-		shouldFire:          status.ShouldFire,
-	}
+	a.player = status.Nick
+	a.playerDescription = desc.Desc
+	a.opponent = status.Opponent
+	a.opponentDescription = desc.OppDesc
+	a.playerShips = board
+	a.opponentShots = status.OppShots
+	a.shouldFire = status.ShouldFire
 
 	a.run()
-
-	return a
 }
 
 func (a *App) run() {
@@ -138,6 +208,7 @@ func (a *App) run() {
 	a.accuracyTxt = gui.NewText(46, 1, fmt.Sprintf("Accuracy: %d/%d", a.shotsHit, a.shotsFired), nil)
 	a.ui.Draw(a.accuracyTxt)
 
+	ctx, _ := context.WithCancel(context.Background())
 	go func() {
 		for {
 			a.waitForYourTurn()
@@ -147,7 +218,7 @@ func (a *App) run() {
 		}
 	}()
 
-	a.ui.Start(nil)
+	a.ui.Start(ctx, nil)
 }
 
 func (a *App) drawOppShots() {
@@ -245,6 +316,45 @@ func (a *App) handleGameEnded(result string) {
 	select {}
 }
 
+func (a *App) displayStats() {
+	stats, err := a.client.Stats()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println()
+	fmt.Printf("| %s | %-20s | %s | %s | %s |\n", "RANK", "NICK", "GAMES", "WINS", "POINTS")
+	for _, s := range stats.Stats {
+		fmt.Printf("| %4d | %-20s | %5d | %4d | %6d |\n",
+			s.Rank,
+			s.Nick,
+			s.Games,
+			s.Wins,
+			s.Points,
+		)
+	}
+	fmt.Println()
+}
+
+func (a *App) displayPlayerStats() {
+	stats, err := a.client.PlayerStats(a.player)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println()
+	fmt.Printf("| %s | %-20s | %s | %s | %s |\n", "RANK", "NICK", "GAMES", "WINS", "POINTS")
+	fmt.Printf("| %4d | %-20s | %5d | %4d | %6d |\n",
+		stats.Stats.Rank,
+		stats.Stats.Nick,
+		stats.Stats.Games,
+		stats.Stats.Wins,
+		stats.Stats.Points,
+	)
+
+	fmt.Println()
+}
+
 func convertCoordinate(coordinate string) (int, int) {
 	if len(coordinate) < 2 || len(coordinate) > 3 {
 		log.Fatal("coordinate should have length 2 or 3!")
@@ -273,4 +383,27 @@ func wrapText(text string) []string {
 	lines = append(lines, line)
 
 	return lines
+}
+
+func getChoice(reader *bufio.Reader, trimFunc func(rune) bool, options []string) int {
+	for i, option := range options {
+		fmt.Printf("%d. %s\n", i+1, option)
+	}
+
+	for {
+		choiceInput, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatal(err)
+		}
+		choice, err := strconv.Atoi(strings.TrimRightFunc(choiceInput, trimFunc))
+		if err != nil {
+			fmt.Println("Your choice must be an integer number! Try again")
+			continue
+		}
+		if choice < 1 || choice > len(options) {
+			fmt.Println("You must choose from existing options! Try again")
+			continue
+		}
+		return choice
+	}
 }

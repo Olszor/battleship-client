@@ -40,3 +40,19 @@ type ListResponse struct {
 	GameStatus string `json:"game_status"`
 	Nick       string `json:"nick"`
 }
+
+type StatsData struct {
+	Games  int    `json:"games"`
+	Nick   string `json:"nick"`
+	Points int    `json:"points"`
+	Rank   int    `json:"rank"`
+	Wins   int    `json:"wins"`
+}
+
+type StatsResponse struct {
+	Stats []StatsData `json:"stats"`
+}
+
+type PlayerStatsResponse struct {
+	Stats StatsData `json:"stats"`
+}

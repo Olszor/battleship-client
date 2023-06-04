@@ -277,3 +277,73 @@ func (c *Client) Refresh() error {
 
 	return nil
 }
+
+func (c *Client) Stats() (*StatsResponse, error) {
+	requestUrl, err := url.JoinPath(c.url, "/stats")
+	if err != nil {
+		return nil, fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, requestUrl, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %s", err)
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	bodyJson, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading body: %s", err)
+	}
+
+	var resBody StatsResponse
+	err = json.Unmarshal(bodyJson, &resBody)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing body: %s", err)
+	}
+
+	return &resBody, nil
+}
+
+func (c *Client) PlayerStats(player string) (*PlayerStatsResponse, error) {
+	requestUrl, err := url.JoinPath(c.url, "/stats/"+player)
+	if err != nil {
+		return nil, fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, requestUrl, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %s", err)
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	bodyJson, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading body: %s", err)
+	}
+
+	var resBody PlayerStatsResponse
+	err = json.Unmarshal(bodyJson, &resBody)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing body: %s", err)
+	}
+
+	return &resBody, nil
+}
