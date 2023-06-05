@@ -25,8 +25,9 @@ func NewClient(url string, timeout time.Duration) *Client {
 	}
 }
 
-func (c *Client) InitGame(description string, nick string, targetNick string, wpbot bool) error {
+func (c *Client) InitGame(coords []string, description string, nick string, targetNick string, wpbot bool) error {
 	body := InitGameRequest{
+		Coords:     coords,
 		Desc:       description,
 		Nick:       nick,
 		TargetNick: targetNick,
@@ -346,4 +347,28 @@ func (c *Client) PlayerStats(player string) (*PlayerStatsResponse, error) {
 	}
 
 	return &resBody, nil
+}
+
+func (c *Client) Abandon() error {
+	requestUrl, err := url.JoinPath(c.url, "/game/abandon")
+	if err != nil {
+		return fmt.Errorf("error creating url: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, requestUrl, http.NoBody)
+	if err != nil {
+		return fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("X-Auth-Token", c.token)
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error sending request: %s", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	return nil
 }

@@ -21,3 +21,12 @@ func Map[T, U any](data []T, f func(T) U) []U {
 
 	return r
 }
+
+func makeRequest(requestFunc func() error) {
+	for i := 0; i < 5; i++ {
+		err := requestFunc()
+		if err == nil {
+			return
+		}
+	}
+}
