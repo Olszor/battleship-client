@@ -101,7 +101,6 @@ func (a *App) displayMenu(reader *bufio.Reader, trimFunc func(rune) bool) (strin
 			a.displayPlayerStats()
 		case 6:
 			a.setupBoard()
-			fmt.Println(a.customShips)
 		}
 	}
 }
@@ -478,7 +477,7 @@ func (a *App) setupBoard() {
 	}
 	var shipsCoord []string
 	ui := gui.NewGUI(true)
-	board := gui.NewBoard(1, 8, nil)
+	board := gui.NewBoard(1, 5, nil)
 	states := [10][10]gui.State{}
 	for i := range states {
 		states[i] = [10]gui.State{}
@@ -488,8 +487,10 @@ func (a *App) setupBoard() {
 	}
 	ui.Draw(board)
 	board.SetStates(states)
-	placedShipTxt := gui.NewText(1, 3, "", nil)
+	placedShipTxt := gui.NewText(1, 1, "", nil)
 	ui.Draw(placedShipTxt)
+	impossibleInfoTxt := gui.NewText(1, 3, "If impossible position occurred press Ctrl + C and try setting up board once again!", nil)
+	ui.Draw(impossibleInfoTxt)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -552,7 +553,8 @@ func (a *App) setupBoard() {
 			}
 		}
 		a.customShips = shipsCoord
-		placedShipTxt.SetText("Press Ctrl + C to exit")
+		placedShipTxt.SetText("Ships saved! Press Ctrl + C to exit")
+		ui.Remove(impossibleInfoTxt)
 	}()
 
 	ui.Start(ctx, nil)
