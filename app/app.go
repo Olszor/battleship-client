@@ -14,31 +14,34 @@ import (
 )
 
 type App struct {
-	client              *http.Client
-	player              string
-	playerDescription   string
-	opponent            string
-	opponentDescription string
-	ui                  *gui.GUI
-	playerShips         []string
-	playerBoard         *gui.Board
-	opponentBoard       *gui.Board
-	playerStates        [10][10]gui.State
-	opponentStates      [10][10]gui.State
-	opponentShots       []string
-	shouldFire          bool
-	yourTurnTxt         *gui.Text
-	opponentTurnTxt     *gui.Text
-	timerTxt            *gui.Text
-	timer               int
-	accuracyTxt         *gui.Text
-	shotsFired          int
-	shotsHit            int
-	lastGameStatus      string
-	cancelFunc          func()
-	opponentShips       map[int]int
-	shipsInfoTxt        *gui.Text
-	customShips         []string
+	client                *http.Client
+	player                string
+	playerDescription     string
+	opponent              string
+	opponentDescription   string
+	ui                    *gui.GUI
+	playerShips           []string
+	playerBoard           *gui.Board
+	opponentBoard         *gui.Board
+	playerStates          [10][10]gui.State
+	opponentStates        [10][10]gui.State
+	opponentShots         []string
+	shouldFire            bool
+	yourTurnTxt           *gui.Text
+	opponentTurnTxt       *gui.Text
+	timerTxt              *gui.Text
+	timer                 int
+	accuracyTxt           *gui.Text
+	shotsFired            int
+	shotsHit              int
+	lastGameStatus        string
+	cancelFunc            func()
+	opponentShips         map[int]int
+	fourTileShipsInfoTxt  *gui.Text
+	threeTileShipsInfoTxt *gui.Text
+	twoTileShipsInfoTxt   *gui.Text
+	oneTileShipsInfoTxt   *gui.Text
+	customShips           []string
 }
 
 func NewApp(client *http.Client, reader *bufio.Reader, trimFunc func(rune) bool, description string, nick string) {
@@ -113,7 +116,8 @@ func (a *App) newGame(description string, nick string, targetNick string, wpbot 
 		return err
 	})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Error has occurred")
+		return
 	}
 
 	var status *http.StatusResponse
@@ -123,6 +127,10 @@ func (a *App) newGame(description string, nick string, targetNick string, wpbot 
 	})
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if targetNick == "" {
+		fmt.Println("waiting...")
 	}
 
 	counter := 0
@@ -229,6 +237,16 @@ func (a *App) run() {
 		oppDescTxt := gui.NewText(46, 30+i, line, nil)
 		a.ui.Draw(oppDescTxt)
 	}
+	legendTxt := gui.NewText(92, 8, "Legend:", nil)
+	shipTxt := gui.NewText(92, 9, "S - Ship", nil)
+	hitTxt := gui.NewText(92, 10, "H - Hit", nil)
+	missTxt := gui.NewText(92, 11, "M - Miss", nil)
+	emptyTxt := gui.NewText(92, 12, "~ - Empty", nil)
+	a.ui.Draw(legendTxt)
+	a.ui.Draw(shipTxt)
+	a.ui.Draw(hitTxt)
+	a.ui.Draw(missTxt)
+	a.ui.Draw(emptyTxt)
 	a.yourTurnTxt = gui.NewText(46, 5, "Your turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Green})
 	a.opponentTurnTxt = gui.NewText(46, 5, "Opponent turn!", &gui.TextConfig{FgColor: gui.White, BgColor: gui.Red})
 	a.displayTurnInfo()
@@ -236,8 +254,16 @@ func (a *App) run() {
 	a.ui.Draw(a.timerTxt)
 	a.accuracyTxt = gui.NewText(46, 1, fmt.Sprintf("Accuracy: %d/%d", a.shotsHit, a.shotsFired), nil)
 	a.ui.Draw(a.accuracyTxt)
-	a.shipsInfoTxt = gui.NewText(1, 3, fmt.Sprintf("Remaining ships: 4-%d 3-%d 2-%d 1-%d", a.opponentShips[4], a.opponentShips[3], a.opponentShips[2], a.opponentShips[1]), nil)
-	a.ui.Draw(a.shipsInfoTxt)
+	shipsInfoTxt := gui.NewText(92, 15, "Remaining opponent ships:", nil)
+	a.fourTileShipsInfoTxt = gui.NewText(92, 16, "4 tile: 1/1", nil)
+	a.threeTileShipsInfoTxt = gui.NewText(92, 17, "3 tile: 2/2", nil)
+	a.twoTileShipsInfoTxt = gui.NewText(92, 18, "2 tile: 3/3", nil)
+	a.oneTileShipsInfoTxt = gui.NewText(92, 19, "1 tile: 4/4", nil)
+	a.ui.Draw(shipsInfoTxt)
+	a.ui.Draw(a.fourTileShipsInfoTxt)
+	a.ui.Draw(a.threeTileShipsInfoTxt)
+	a.ui.Draw(a.twoTileShipsInfoTxt)
+	a.ui.Draw(a.oneTileShipsInfoTxt)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -465,7 +491,10 @@ func (a *App) handleSunk(coord string) {
 	ship := getShip(a.opponentStates, coord)
 	setImpossiblePositions(&a.opponentStates, ship)
 	a.opponentShips[len(ship)]--
-	a.shipsInfoTxt.SetText(fmt.Sprintf("Remaining ships: 4-%d 3-%d 2-%d 1-%d", a.opponentShips[4], a.opponentShips[3], a.opponentShips[2], a.opponentShips[1]))
+	a.fourTileShipsInfoTxt.SetText(fmt.Sprintf("4 tile: %d/1", a.opponentShips[4]))
+	a.threeTileShipsInfoTxt.SetText(fmt.Sprintf("3 tile: %d/2", a.opponentShips[3]))
+	a.twoTileShipsInfoTxt.SetText(fmt.Sprintf("2 tile: %d/3", a.opponentShips[2]))
+	a.oneTileShipsInfoTxt.SetText(fmt.Sprintf("1 tile: %d/4", a.opponentShips[1]))
 }
 
 func (a *App) setupBoard() {
@@ -489,7 +518,7 @@ func (a *App) setupBoard() {
 	board.SetStates(states)
 	placedShipTxt := gui.NewText(1, 1, "", nil)
 	ui.Draw(placedShipTxt)
-	impossibleInfoTxt := gui.NewText(1, 3, "If impossible position occurred press Ctrl + C and try setting up board once again!", nil)
+	impossibleInfoTxt := gui.NewText(1, 3, "If you cannot place ship press Ctrl + C and try setting up board once again!", nil)
 	ui.Draw(impossibleInfoTxt)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -542,13 +571,11 @@ func (a *App) setupBoard() {
 						}
 					}
 				}
-				var shipPoints []point
-				for _, coord := range ship {
-					x, y := convertCoordinate(coord)
-					shipPoints = append(shipPoints, point{x, y})
-				}
 				shipsCoord = append(shipsCoord, ship...)
-				setImpossiblePositions(&states, shipPoints)
+				setImpossiblePositions(&states, Map(ship, func(element string) point {
+					x, y := convertCoordinate(element)
+					return point{x, y}
+				}))
 				board.SetStates(states)
 			}
 		}
